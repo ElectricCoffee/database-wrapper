@@ -31,7 +31,7 @@ class Person {
 
 class Database extends SQLite3 {
     public function __construct() {
-        $this->open("people.db");// or die("Could not open a connection to people.db");
+        $this->open("people.db");
         $this->exec(<<<END_SQL
         CREATE TABLE IF NOT EXISTS "People" (
             "id" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -42,12 +42,12 @@ class Database extends SQLite3 {
         END_SQL);
     }
 
-    public function begin() {
-        $this->exec('BEGIN');
+    public function begin(): bool {
+        return $this->exec('BEGIN');
     }
 
-    public function commit() {
-        $this->exec('COMMIT');
+    public function commit(): bool {
+        return $this->exec('COMMIT');
     }
 
     // Convenient self-closing wrapper
@@ -79,7 +79,7 @@ class PeopleTable {
         VALUES ('$sanitized->name', $sanitized->age, '$sanitized->email');
         END_SQL);
 
-        return $db->lastInsertRowID(); // placeholder for now
+        return $db->lastInsertRowID();
     }
 
     // Reads a person's data in the database based on its ID
@@ -98,10 +98,10 @@ class PeopleTable {
 
     // Updates a whole person all at once
     // Individual update methods have intentionally been left out for the example
-    public static function update(SQLite3 $db, int $id, Person $person) {
+    public static function update(SQLite3 $db, int $id, Person $person): bool {
         $sanitized = static::sanitize($person);
 
-        $db->exec(<<<END_SQL
+        return $db->exec(<<<END_SQL
         UPDATE "People"
         SET "name" = '$sanitized->name', 
             "age" = $sanitized->age, 
@@ -110,8 +110,8 @@ class PeopleTable {
         END_SQL);
     }
 
-    public static function delete(SQLite3 $db, int $id) {
-        $db->exec(<<<END_SQL
+    public static function delete(SQLite3 $db, int $id): bool {
+        return $db->exec(<<<END_SQL
         DELETE FROM "People"
         WHERE "id" = $id;
         END_SQL);
