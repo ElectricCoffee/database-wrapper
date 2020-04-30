@@ -15,41 +15,103 @@ class Person {
         $this->age = $age;
         $this->email = $email;
     }
+
+    public static function from_array(array $hash): self {
+        return new Person($hash['name'], $hash['age'], $hash['email']);
+    }
+
+    public function to_array(): array {
+        return (array) $this;
+    }
 }
 
 class Database extends SQLite3 {
-    public function __construct() {
-        $this->open("people.db") or die("Could not open a connection to people.db");
-        $this->exec("CREATE TABLE IF NOT EXISTS People (name VARCHAR, age INTEGER, email VARCHAR);");
-    }
-
-    public function create(Person $person) {
+    // Sanitises the string fields of a Person and returns it as a new object.
+    private static function sanitize_person(Person $person): Person {
         $name = sqlite_escape_string($person->name);
-        $age = strval($person->age);
+        $age = $person->age;
         $email = sqlite_escape_string($person->email);
 
-        $this->exec(<<<END_QUERY
-        INSERT INTO People (name, age, email)
-        VALUES ('$name', $age, '$email');
-        END_QUERY);
+        return new Person($name, $age, $email);
     }
 
-    public function read(int $id): Person {
-
+    public function __construct() {
+        $this->open("people.db") or die("Could not open a connection to people.db");
+        $this->exec(<<<END_SQL
+        CREATE TABLE IF NOT EXISTS "People" (
+            "id" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
+            "name" VARCHAR, 
+            "age" INTEGER, 
+            "email" VARCHAR
+        );
+        END_SQL);
     }
 
-    public function update(int $id, Person $person) {
+    public function begin() {
+        $this->exec('BEGIN');
+    }
 
+    public function commit() {
+        $this->exec('COMMIT');
+    }
+
+    // Creates a new person in the database, and returns its ID
+    public function create(Person $person): int {
+        $sanitized = self::sanitize_person($person);
+
+        $this->exec(<<<END_SQL
+        INSERT INTO "People" ("name", "age", "email")
+        VALUES ('$sanitized->name', $sanitized->age, '$sanitized->email');
+        END_SQL);
+
+        return 0; // placeholder for now
+    }
+
+    // Reads a person's data in the database based on its ID
+    public function read(int $id): ?Person {
+        $query_result = $this->querySingle(<<<END_SQL
+        SELECT * FROM "People"
+        WHERE "id" = $id;
+        END_SQL, true);
+
+        if (count($query_result) == 0) {
+            return NULL;
+        }
+
+        return Person::from_array($query_result);
+    }
+
+    // Updates a whole person all at once
+    public function update_person(int $id, Person $person) {
+        $sanitized = self::sanitize_person($person);
+
+        $this->exec(<<<END_SQL
+        UPDATE "People"
+        SET "name" = '$sanitized->name', 
+            "age" = $sanitized->age, 
+            "email" = '$sanitized->email'
+        WHERE "id" = $id;
+        END_SQL);
     }
 
     public function delete(int $id) {
+        $this->exec(<<<END_SQL
+        DELETE FROM "People"
+        WHERE "id" = $id;
+        END_SQL);
+    }
 
+    // Convenient self-closing wrapper
+    public static function do(callable $body) {
+        $db = new Database();
+        $db->begin();
+        $body($db);
+        $db->commit();
+        $db->close();
     }
 }
 
 
-$db = new Database();
-
-
-
-$db->close();
+Database::do(function($db) {
+    $db->create(new Person('Niko', 28, 'slench102@gmail.com'));
+});
