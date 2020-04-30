@@ -23,20 +23,24 @@ class Person {
     public function to_array(): array {
         return (array) $this;
     }
+
+    public function greet() {
+        echo "Hi! My name is $this->name, I'm $this->age years old, and my email is $this->email\n";
+    }
 }
 
 class Database extends SQLite3 {
     // Sanitises the string fields of a Person and returns it as a new object.
     private static function sanitize_person(Person $person): Person {
-        $name = sqlite_escape_string($person->name);
+        $name = SQLite3::escapeString($person->name);
         $age = $person->age;
-        $email = sqlite_escape_string($person->email);
+        $email = SQLite3::escapeString($person->email);
 
         return new Person($name, $age, $email);
     }
 
     public function __construct() {
-        $this->open("people.db") or die("Could not open a connection to people.db");
+        $this->open("people.db");// or die("Could not open a connection to people.db");
         $this->exec(<<<END_SQL
         CREATE TABLE IF NOT EXISTS "People" (
             "id" INTEGER PRIMARY KEY AUTOINCREMENT NOT NULL,
@@ -64,7 +68,7 @@ class Database extends SQLite3 {
         VALUES ('$sanitized->name', $sanitized->age, '$sanitized->email');
         END_SQL);
 
-        return 0; // placeholder for now
+        return $this->lastInsertRowID(); // placeholder for now
     }
 
     // Reads a person's data in the database based on its ID
@@ -111,7 +115,19 @@ class Database extends SQLite3 {
     }
 }
 
+$pid = 0;
 
-Database::do(function($db) {
-    $db->create(new Person('Niko', 28, 'slench102@gmail.com'));
+Database::do(function($db) use (&$pid) {
+    $pid = $db->create(new Person('Niko', 28, 'slench102@gmail.com'));
+    $person = $db->read($pid);
+    $person->greet();
+});
+
+Database::do(function($db) use (&$pid) {
+    $db->update_person($pid, new Person('Niko', 28, 'contact@wausoft.eu'));
+});
+
+Database::do(function($db) use (&$pid) {
+    $person = $db->read($pid);
+    $person->greet(); 
 });
