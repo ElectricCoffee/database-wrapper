@@ -30,15 +30,6 @@ class Person {
 }
 
 class Database extends SQLite3 {
-    // Sanitises the string fields of a Person and returns it as a new object.
-    private static function sanitize_person(Person $person): Person {
-        $name = SQLite3::escapeString($person->name);
-        $age = $person->age;
-        $email = SQLite3::escapeString($person->email);
-
-        return new Person($name, $age, $email);
-    }
-
     public function __construct() {
         $this->open("people.db");// or die("Could not open a connection to people.db");
         $this->exec(<<<END_SQL
@@ -59,21 +50,41 @@ class Database extends SQLite3 {
         $this->exec('COMMIT');
     }
 
-    // Creates a new person in the database, and returns its ID
-    public function create(Person $person): int {
-        $sanitized = self::sanitize_person($person);
+    // Convenient self-closing wrapper
+    public static function do(callable $body) {
+        $db = new Database();
+        $db->begin();
+        $body($db);
+        $db->commit();
+        $db->close();
+    }
+}
 
-        $this->exec(<<<END_SQL
+class PeopleTable {
+    // Sanitises the string fields of a Person and returns it as a new object.
+    private static function sanitize(Person $person): Person {
+        $name = SQLite3::escapeString($person->name);
+        $age = $person->age;
+        $email = SQLite3::escapeString($person->email);
+
+        return new Person($name, $age, $email);
+    }
+
+    // Creates a new person in the database, and returns its ID
+    public static function create(SQLite3 $db, Person $person): int {
+        $sanitized = static::sanitize($person);
+
+        $db->exec(<<<END_SQL
         INSERT INTO "People" ("name", "age", "email")
         VALUES ('$sanitized->name', $sanitized->age, '$sanitized->email');
         END_SQL);
 
-        return $this->lastInsertRowID(); // placeholder for now
+        return $db->lastInsertRowID(); // placeholder for now
     }
 
     // Reads a person's data in the database based on its ID
-    public function read(int $id): ?Person {
-        $query_result = $this->querySingle(<<<END_SQL
+    public static function read(SQLite3 $db, int $id): ?Person {
+        $query_result = $db->querySingle(<<<END_SQL
         SELECT * FROM "People"
         WHERE "id" = $id;
         END_SQL, true);
@@ -86,10 +97,11 @@ class Database extends SQLite3 {
     }
 
     // Updates a whole person all at once
-    public function update_person(int $id, Person $person) {
-        $sanitized = self::sanitize_person($person);
+    // Individual update methods have intentionally been left out for the example
+    public static function update(SQLite3 $db, int $id, Person $person) {
+        $sanitized = static::sanitize($person);
 
-        $this->exec(<<<END_SQL
+        $db->exec(<<<END_SQL
         UPDATE "People"
         SET "name" = '$sanitized->name', 
             "age" = $sanitized->age, 
@@ -98,36 +110,27 @@ class Database extends SQLite3 {
         END_SQL);
     }
 
-    public function delete(int $id) {
-        $this->exec(<<<END_SQL
+    public static function delete(SQLite3 $db, int $id) {
+        $db->exec(<<<END_SQL
         DELETE FROM "People"
         WHERE "id" = $id;
         END_SQL);
-    }
-
-    // Convenient self-closing wrapper
-    public static function do(callable $body) {
-        $db = new Database();
-        $db->begin();
-        $body($db);
-        $db->commit();
-        $db->close();
-    }
+    }   
 }
 
 $pid = 0;
 
 Database::do(function($db) use (&$pid) {
-    $pid = $db->create(new Person('Niko', 28, 'slench102@gmail.com'));
-    $person = $db->read($pid);
+    $pid = PeopleTable::create($db, new Person('Niko', 28, 'slench102@gmail.com'));
+    echo "New person created with ID $pid\n";
+    $person = PeopleTable::read($db, $pid);
     $person->greet();
 });
 
-Database::do(function($db) use (&$pid) {
-    $db->update_person($pid, new Person('Niko', 28, 'contact@wausoft.eu'));
-});
+// testing out multiple separate transactions
+Database::do(fn($db) => PeopleTable::update($db, $pid, new Person('Niko', 28, 'contact@wausoft.eu')));
 
 Database::do(function($db) use (&$pid) {
-    $person = $db->read($pid);
+    $person = PeopleTable::read($db, $pid);
     $person->greet(); 
 });
